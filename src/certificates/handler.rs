@@ -23,7 +23,6 @@ impl CertHandler {
 impl ResolvesServerCert for CertHandler {
     fn resolve(&self, hello: ClientHello<'_>) -> Option<Arc<CertifiedKey>> {
         let host = hello.server_name()?;
-
         info!("TLS Host is {host}; loading certs");
 
         // FIXME: This should be a `get()` in CertStore, but papaya
@@ -31,8 +30,7 @@ impl ResolvesServerCert for CertHandler {
         // guard here anyway). There may be another way to do it
         // cleanly?
         let pmap = self.certstore.by_host.pin();
-        let host_cert = pmap.get(&host.to_string())
-            .expect("Certificate for host not found");
+        let host_cert = pmap.get(&host.to_string())?;
 
         let provider = CryptoProvider::get_default()?;
         let cert = CertifiedKey::from_der(host_cert.certs.clone(),
