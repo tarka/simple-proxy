@@ -85,9 +85,7 @@ pub async fn start_server() -> Result<()>{
     let crypto = aws_lc_rs::default_provider();
     let server_config = ServerConfig::builder_with_provider(crypto.into())
         .with_safe_default_protocol_versions()?
-        .with_no_client_auth()
-;
-//        .with_single_cert();
+        .with_no_client_auth();
 
     // let addr = SocketAddr::from_str("0.0.0.0:8443")?;
     // let listener = TcpListener::bind(addr).await?;

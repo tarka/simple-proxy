@@ -22,18 +22,10 @@ use notify_debouncer_full::{
 };
 use rustls::server::CertificateType;
 use rustls_pki_types::{pem::PemObject, CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer, SubjectPublicKeyInfoDer};
-// use pingora::{
-//     listeners::TlsAccept, protocols::tls::TlsRef, tls::{
-//         pkey::{PKey, Private}, ssl::NameType, x509::X509
-//     }, ErrorType, OkOrErr
-// };
 use tracing::{debug, info, warn};
 use x509_parser::prelude::{FromDer, X509Certificate};
 
-use crate::{
-//    config::{Config, TlsConfigType, TlsFilesConfig},
-    errors::Error,
-};
+use crate::errors::Error;
 
 
 pub struct TlsFiles {
@@ -53,20 +45,28 @@ struct HostCertificate {
     certs: Vec<Certificate>,
 }
 
-// impl HostCertificate {
-//     fn new(host: String, keyfile: Utf8PathBuf, certfile: Utf8PathBuf) -> Result<Self> {
-//         let (key, certs) = load_certs(&keyfile, &certfile)?;
+impl HostCertificate {
+    fn new(keyfile: Utf8PathBuf, certfile: Utf8PathBuf) -> Result<Self> {
+        let (key, certs) = load_certs(&keyfile, &certfile)?;
 
-//         Ok(HostCertificate {
-//             host,
-//             keyfile,
-//             key,
-//             certfile,
-//             certs,
-//         })
-//     }
+        let (_, x509) = X509Certificate::from_der(&certs[0])?;
+        let cn = x509.subject()
+            .iter_common_name()
+            .next()
+            .context("No host/CN in certificate")?
+            .as_str()?
+            .to_string();
 
-// }
+        Ok(HostCertificate {
+            host: cn,
+            keyfile,
+            key,
+            certfile,
+            certs,
+        })
+    }
+
+}
 
 fn load_certs(keyfile: &Utf8Path, certfile: &Utf8Path) -> Result<(PrivateKey, Vec<Certificate>)> {
     let key = PrivateKeyDer::from_pem_file(keyfile)?
@@ -91,22 +91,6 @@ pub struct CertStore {
     watchlist: Vec<Utf8PathBuf>,
 }
 
-fn cn_host(cn: String) -> Result<String> {
-    let host = cn.split('=')
-        .nth(1)
-        .context("Failed to find host in cert 'CN=...'")?;
-    Ok(host.to_string())
-}
-
-fn uri_host(uri: &String) -> Result<String> {
-    let parsed = Uri::try_from(uri)?;
-    let host = parsed.host()
-        .context("Failed to find host in servername '{uri}'")?;
-    Ok(host.to_string())
-}
-
-
-
 impl CertStore {
     pub fn new(cert_files: &Vec<TlsFiles>) -> Result<Self> {
         info!("Loading host certificates");
@@ -114,24 +98,7 @@ impl CertStore {
         let certs = cert_files.iter()
             .map(|cf| {
                 debug!("Loading certs from {}, {}", cf.keyfile, cf.certfile);
-                let (key, certs) = load_certs(&cf.keyfile, &cf.certfile)?;
-
-                let (_, x509) = X509Certificate::from_der(&certs[0])?;
-                let cn = x509.subject()
-                    .iter_common_name()
-                    .next()
-                    .context("No host/CN in certificate")?
-                    .as_str()?
-                    .to_string();
-
-                let hostcert = HostCertificate {
-                    host: cn,
-                    keyfile: cf.keyfile.clone(),
-                    key,
-                    certfile: cf.certfile.clone(),
-                    certs,
-                };
-                Ok(Arc::new(hostcert))
+                Ok(Arc::new(HostCertificate::new(cf.keyfile.clone(), cf.certfile.clone())?))
             })
             .collect::<Result<Vec<Arc<HostCertificate>>>>()?;
 
