@@ -7,6 +7,7 @@ use tracing::{debug, info, warn};
 use crate::certificates::{HostCertificate, TlsFiles};
 
 
+#[derive(Debug)]
 pub struct CertStore {
     pub by_host: papaya::HashMap<String, Arc<HostCertificate>>,
     pub by_file: papaya::HashMap<Utf8PathBuf, Arc<HostCertificate>>,

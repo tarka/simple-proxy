@@ -23,7 +23,7 @@ use rustls::{
 };
 use tracing_log::log::{error, info, warn};
 
-use crate::{certificates::{store::CertStore, TlsFiles}, errors::Error};
+use crate::{certificates::{handler::CertHandler, store::CertStore, TlsFiles}, errors::Error};
 
 cfg_if! {
     if #[cfg(feature = "smol")] {
@@ -79,13 +79,14 @@ pub async fn start_server() -> Result<()>{
         keyfile: Utf8PathBuf::from("tests/data/certs/external/dvalinn.haltcondition.net.key"),
         certfile: Utf8PathBuf::from("tests/data/certs/external/dvalinn.haltcondition.net.crt"),
     };
-    let certstore = CertStore::new(&vec![files])?;
-
+    let certstore = Arc::new(CertStore::new(&vec![files])?);
 
     let crypto = aws_lc_rs::default_provider();
+    let resolver = Arc::new(CertHandler::new(certstore.clone()));
     let server_config = ServerConfig::builder_with_provider(crypto.into())
         .with_safe_default_protocol_versions()?
-        .with_no_client_auth();
+        .with_no_client_auth()
+        .with_cert_resolver(resolver);
 
     // let addr = SocketAddr::from_str("0.0.0.0:8443")?;
     // let listener = TcpListener::bind(addr).await?;
