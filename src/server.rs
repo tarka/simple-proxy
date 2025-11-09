@@ -23,7 +23,7 @@ use rustls::{
 };
 use tracing_log::log::{error, info, warn};
 
-use crate::{certificates::{CertStore, TlsFiles}, errors::Error};
+use crate::{certificates::{store::CertStore, TlsFiles}, errors::Error};
 
 cfg_if! {
     if #[cfg(feature = "smol")] {
