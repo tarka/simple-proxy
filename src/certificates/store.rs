@@ -94,6 +94,8 @@ mod tests {
     #[apply(test!)]
     #[test_log::test]
     async fn test_snakeoil_certstore() -> Result<()> {
+        rustls::crypto::aws_lc_rs::default_provider().install_default();
+
         let files = TlsFiles {
             keyfile: Utf8PathBuf::from("tests/data/certs/snakeoil.key"),
             certfile: Utf8PathBuf::from("tests/data/certs/snakeoil.crt"),

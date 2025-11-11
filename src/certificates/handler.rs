@@ -33,12 +33,7 @@ impl ResolvesServerCert for CertHandler {
         let host_cert = pmap.get(&host.to_string())?;
 
         info!("Found {host} cert");
-        let provider = CryptoProvider::get_default()?;
-        let cert = CertifiedKey::from_der(host_cert.certs.clone(),
-                                          host_cert.key.clone_key(),
-                                          &provider).ok()?;
-
-        Some(Arc::new(cert))
+        Some(Arc::new(host_cert.cert.clone()))
     }
 
 }
