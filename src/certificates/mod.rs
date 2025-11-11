@@ -1,7 +1,7 @@
 
 pub mod handler;
 pub mod store;
-pub mod watcher;
+//pub mod watcher;
 
 use anyhow::{bail, Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
@@ -29,8 +29,8 @@ pub struct HostCertificate {
 }
 
 impl HostCertificate {
-    fn new(keyfile: Utf8PathBuf, certfile: Utf8PathBuf) -> Result<Self> {
-        let (key, certs) = load_certs(&keyfile, &certfile)?;
+    async fn new(keyfile: Utf8PathBuf, certfile: Utf8PathBuf) -> Result<Self> {
+        let (key, certs) = load_certs(&keyfile, &certfile).await?;
 
         let (_, x509) = X509Certificate::from_der(&certs[0])?;
         let cn = x509.subject()
@@ -51,12 +51,17 @@ impl HostCertificate {
 
 }
 
-fn load_certs(keyfile: &Utf8Path, certfile: &Utf8Path) -> Result<(PrivateKey, Vec<Certificate>)> {
-    let key = PrivateKeyDer::from_pem_file(keyfile)?
-        .clone_key();
+async fn load_certs(keyfile: &Utf8Path, certfile: &Utf8Path) -> Result<(PrivateKey, Vec<Certificate>)> {
+    let key = {
+        let keyfile = keyfile.to_path_buf();
+        blocking::unblock(move || PrivateKeyDer::from_pem_file(keyfile)).await?
+    };
 
-    let certs = CertificateDer::pem_file_iter(certfile)?
-        .collect::<Result<Vec<_>, _>>()?;
+    let certs = {
+        let certfile = certfile.to_path_buf();
+        blocking::unblock(move || CertificateDer::pem_file_iter(certfile)).await?
+            .collect::<Result<Vec<_>, _>>()?
+    };
 
     if certs.is_empty() {
         bail!("No certificates found in TLS .crt file");
@@ -67,15 +72,19 @@ fn load_certs(keyfile: &Utf8Path, certfile: &Utf8Path) -> Result<(PrivateKey, Ve
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use macro_rules_attribute::apply;
+    use smol_macros::test;
     use x509_parser::prelude::{FromDer, X509Certificate};
 
-    use super::*;
 
-    #[test]
-    fn test_load_snakeoil() -> Result<()> {
+
+    #[apply(test!)]
+    #[test_log::test]
+    async fn test_load_snakeoil() -> Result<()> {
         let keyfile = Utf8PathBuf::from("tests/data/certs/snakeoil.key");
         let certfile = Utf8PathBuf::from("tests/data/certs/snakeoil.crt");
-        let (key, certs) = load_certs(&keyfile, &certfile)?;
+        let (key, certs) = load_certs(&keyfile, &certfile).await?;
 
         assert_eq!(1, certs.len());
         let (_, x509) = X509Certificate::from_der(&certs[0])?;
@@ -86,11 +95,13 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_hostcert() -> Result<()> {
+
+    #[apply(test!)]
+    #[test_log::test]
+    async fn test_hostcert() -> Result<()> {
         let keyfile = Utf8PathBuf::from("tests/data/certs/snakeoil.key");
         let certfile = Utf8PathBuf::from("tests/data/certs/snakeoil.crt");
-        let hc = HostCertificate::new(keyfile, certfile)?;
+        let hc = HostCertificate::new(keyfile, certfile).await?;
 
         assert_eq!(1, hc.certs.len());
         assert_eq!("proxeny.example.com", hc.host);

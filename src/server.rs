@@ -1,25 +1,29 @@
 
-use std::{io::Read, net::SocketAddr, sync::Arc};
+use std::{io::Read, net::SocketAddr, str::FromStr, sync::Arc};
 
 use anyhow::Result;
+use async_executor::Executor;
 use async_lock::OnceCell;
 use camino::Utf8PathBuf;
 use cfg_if::cfg_if;
-use http::{request::Builder, HeaderName, HeaderValue};
+use futures_rustls::TlsAcceptor;
+use http::{request::Builder, HeaderName, HeaderValue, Request};
+use http_body_util::Full;
 use hyper::{
-    body::{Buf, Incoming},
-    client::conn::http1,
+    body::{Body, Buf, Bytes, Incoming},
+    server::conn::http2,
     header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HOST},
+    service::service_fn,
     Method,
     Response,
     StatusCode,
     Uri
 };
 use rustls::{
-    crypto::aws_lc_rs,
+    crypto::{aws_lc_rs, CryptoProvider},
     pki_types::ServerName,
     ClientConfig, ConfigBuilder,
-    RootCertStore, ServerConfig
+    RootCertStore, ServerConfig, ServerConnection, Stream
 };
 use tracing_log::log::{error, info, warn};
 
@@ -30,6 +34,8 @@ cfg_if! {
         use smol::net::{TcpListener, TcpStream};
         use futures_rustls::TlsConnector;
         use smol_hyper::rt::FuturesIo as HyperIo;
+        use futures_io::AsyncRead;
+        use futures_io::AsyncWrite;
 
     } else if #[cfg(feature = "tokio")] {
         use tokio::net::TcpStream;
@@ -70,99 +76,68 @@ async fn load_system_certs() -> &'static RootCertStore {
     }).await
 }
 
+#[derive(Clone)]
+struct SmolExecutor;
+
+impl<F> hyper::rt::Executor<F> for SmolExecutor
+where
+    F: Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    fn execute(&self, fut: F) {
+        smol::spawn(fut).detach();
+    }
+}
+
+
+async fn handler(_: Request<hyper::body::Incoming>) -> Result<Response<Full<Bytes>>> {
+    Ok(Response::new(Full::new(Bytes::from("Hello, World!"))))
+}
 
 
 pub async fn start_server() -> Result<()>{
     info!("Starting...");
 
+    aws_lc_rs::default_provider().install_default();
+
     let files = TlsFiles {
         keyfile: Utf8PathBuf::from("tests/data/certs/external/dvalinn.haltcondition.net.key"),
         certfile: Utf8PathBuf::from("tests/data/certs/external/dvalinn.haltcondition.net.crt"),
     };
-    let certstore = Arc::new(CertStore::new(&vec![files])?);
+    let certstore = Arc::new(CertStore::new(&vec![files]).await?);
 
     let crypto = aws_lc_rs::default_provider();
     let resolver = Arc::new(CertHandler::new(certstore.clone()));
-    let server_config = ServerConfig::builder_with_provider(crypto.into())
-        .with_safe_default_protocol_versions()?
-        .with_no_client_auth()
-        .with_cert_resolver(resolver);
+    let mut server_config = ServerConfig::builder_with_provider(crypto.into())
+                                 .with_safe_default_protocol_versions()?
+                                 .with_no_client_auth()
+                                 .with_cert_resolver(resolver);
+    server_config.alpn_protocols = vec![b"h2".to_vec()];
 
-    // let addr = SocketAddr::from_str("0.0.0.0:8443")?;
-    // let listener = TcpListener::bind(addr).await?;
+    let server_config = Arc::new(server_config);
+    let tls_acceptor = TlsAcceptor::from(server_config.clone());
 
-    // TcpStream::connect();
+    let addr = SocketAddr::from_str("0.0.0.0:8443")?;
+    let listener = TcpListener::bind(addr).await?;
 
-    Ok(())
-}
+    let service = service_fn(handler);
 
+    loop {
+        info!("Listening");
+        let (tcp, remote) = listener.accept().await?;
+        info!("Connected from {remote}");
 
+        let tls = tls_acceptor.accept(tcp).await?;
 
+        let io = HyperIo::new(tls);
 
-async fn request<In>(method: Method, uri: &Uri, obj: Option<In>, headers: Vec<(HeaderName, HeaderValue)>)
-//-> Result<Response<Incoming>>
-    -> Result<()>
-{
-    let host = uri.host()
-        .ok_or(Error::UrlError(format!("URL: {:?}", uri)))?
-        .to_owned();
+        http2::Builder::new(SmolExecutor)
+            .serve_connection(io, service_fn(handler)) .await?;
 
-    // let mut rb = Builder::new()
-    //     .method(method)
-    //     .uri(uri)
-    //     .header(HOST, &host)
-    //     .header(ACCEPT, "application/json");
-    // let rheaders = rb.headers_mut()
-    //     .ok_or(Error::ApiError("Failed to retrieve HTTP builder headers".to_string()))?;
-    // for (k, v) in headers {
-    //     rheaders.insert(k, v);
-    // }
-    // let req = if obj.is_some() {
-    //     rb = rb.header(CONTENT_TYPE, "application/json");
-    //     let body = serde_json::to_string(&obj)?;
-    //     rb.body(body)?
-    // } else {
-    //     rb.body("".to_string())?
-    // };
-
-
-    // let stream = TcpStream::connect((host.clone(), 443)).await?;
-
-    // let cert_store = load_system_certs();
-    // let tlsdomain = ServerName::try_from(host)?;
-    // let crypto = aws_lc_rs::default_provider();
-    // let tlsconf = ClientConfig::builder_with_provider(crypto.into())
-    //     .with_safe_default_protocol_versions()?
-    //     .with_root_certificates(cert_store.await)
-    //     .with_no_client_auth();
-    // let tlsconn = TlsConnector::from(Arc::new(tlsconf));
-    // let tlsstream = tlsconn.connect(tlsdomain, stream).await?;
-    // println!("tlsstream: {tlsstream:#?}");
-
-    // let (mut sender, conn) = http1::handshake(HyperIo::new(tlsstream)).await?;
-
-    // spawn(async move {
-    //     if let Err(e) = conn.await {
-    //         error!("Connection failed: {:?}", e);
-    //     }
-    // });
-
-//    let res = sender.send_request(req).await?;
+    }
 
     Ok(())
 }
-
-
-// async fn from_error(res: Response<Incoming>) -> Result<Error> {
-//     let code = res.status();
-//     let mut err = String::new();
-//     let _nr = res.collect().await?
-//         .to_bytes()
-//         .reader()
-//         .read_to_string(&mut err)?;
-//     error!("REST op failed: {code} {err:?}");
-//     Ok(Error::HttpError(format!("REST op failed: {code} {err:?}")))
-// }
 
 
 #[cfg(test)]

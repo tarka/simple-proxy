@@ -33,6 +33,11 @@ smol-hyper = { version = "0.1.1", optional = true }
 hyper-util = { version = "0.1.17", features = ["tokio"], optional = true }
 tokio = { version = "1.47.1", features = ["rt", "test-util", "net", "full"], optional = true }
 tokio-rustls = { version = "0.26.3", optional = true }
+blocking = { version = "1.6.2", features = ["tracing"] }
+futures-io = "0.3.31"
+futures = "0.3.31"
+http-body-util = "0.1.3"
+async-executor = "1.13.3"
 
 [features]
 default = ["smol"]
@@ -44,3 +49,8 @@ tokio = ["dep:tokio", "dep:hyper-util", "dep:tokio-rustls"]
 # FIXME: For early dev, remove before public release
 dead_code = "allow"
 unused = "allow"
+
+[dev-dependencies]
+macro_rules_attribute = "0.2.2"
+smol-macros = "0.1.1"
+test-log = "0.2.18"

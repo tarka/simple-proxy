@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use camino::Utf8PathBuf;
+use futures::{stream, StreamExt};
 use tracing::{debug, info, warn};
 
 use crate::certificates::{HostCertificate, TlsFiles};
@@ -18,15 +19,17 @@ pub struct CertStore {
 }
 
 impl CertStore {
-    pub fn new(cert_files: &Vec<TlsFiles>) -> Result<Self> {
+    pub async fn new(cert_files: &Vec<TlsFiles>) -> Result<Self> {
         info!("Loading host certificates");
 
-        let certs = cert_files.iter()
-            .map(|cf| {
-                debug!("Loading certs from {}, {}", cf.keyfile, cf.certfile);
-                Ok(Arc::new(HostCertificate::new(cf.keyfile.clone(), cf.certfile.clone())?))
+        let certs = stream::iter(cert_files)
+            .then(|cf| async move {
+                info!("Loading certs from {}, {}", cf.keyfile, cf.certfile);
+                let hc = HostCertificate::new(cf.keyfile.clone(), cf.certfile.clone()).await?;
+                Ok(Arc::new(hc))
             })
-            .collect::<Result<Vec<Arc<HostCertificate>>>>()?;
+            .collect::<Vec<Result<Arc<HostCertificate>>>>().await
+            .into_iter().collect::<Result<Vec<Arc<HostCertificate>>>>()?;
 
         let by_host = certs.iter()
             .map(|cert| (cert.host.clone(),
@@ -84,14 +87,18 @@ impl CertStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use macro_rules_attribute::apply;
+    use smol_macros::test;
 
-    #[test]
-    fn test_snakeoil_certstore() -> Result<()> {
+
+    #[apply(test!)]
+    #[test_log::test]
+    async fn test_snakeoil_certstore() -> Result<()> {
         let files = TlsFiles {
             keyfile: Utf8PathBuf::from("tests/data/certs/snakeoil.key"),
             certfile: Utf8PathBuf::from("tests/data/certs/snakeoil.crt"),
         };
-        let certstore = CertStore::new(&vec![files])?;
+        let certstore = CertStore::new(&vec![files]).await?;
 
         let pinned = certstore.by_host.pin();
         let cert = pinned.get("proxeny.example.com").unwrap();

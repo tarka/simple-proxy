@@ -38,7 +38,7 @@ fn init_logging(level: u8) -> Result<()> {
 
 
 fn main() -> Result<()> {
-    init_logging(1)?;
+    init_logging(2)?;
 
     smol::block_on(start_server())?;
     Ok(())
