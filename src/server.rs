@@ -132,7 +132,7 @@ pub async fn start_server() -> Result<()>{
         let io = HyperIo::new(tls);
 
         http2::Builder::new(SmolExecutor)
-            .serve_connection(io, service_fn(handler)) .await?;
+            .serve_connection(io, service_fn(handler)).await?;
 
     }
 

@@ -3,6 +3,8 @@ pub mod handler;
 pub mod store;
 //pub mod watcher;
 
+use std::sync::Arc;
+
 use anyhow::{bail, Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
 use rustls::{crypto::CryptoProvider, sign::CertifiedKey};
@@ -27,7 +29,7 @@ pub struct HostCertificate {
     host: String,
     keyfile: Utf8PathBuf,
     certfile: Utf8PathBuf,
-    cert: CertifiedKey,
+    cert: Arc<CertifiedKey>,
 }
 
 impl HostCertificate {
@@ -44,7 +46,7 @@ impl HostCertificate {
 
         let crypto = CryptoProvider::get_default()
             .ok_or(Error::CertificateError("Failed to find default crypto provider in rustls"))?;
-        let cert = CertifiedKey::from_der(certs, key, &crypto)?;
+        let cert = Arc::new(CertifiedKey::from_der(certs, key, &crypto)?);
 
         Ok(HostCertificate {
             host,
@@ -83,12 +85,9 @@ mod tests {
     use x509_parser::prelude::{FromDer, X509Certificate};
 
 
-
     #[apply(test!)]
     #[test_log::test]
     async fn test_load_snakeoil() -> Result<()> {
-        rustls::crypto::aws_lc_rs::default_provider().install_default();
-
         let keyfile = Utf8PathBuf::from("tests/data/certs/snakeoil.key");
         let certfile = Utf8PathBuf::from("tests/data/certs/snakeoil.crt");
         let (key, certs) = load_certs(&keyfile, &certfile).await?;

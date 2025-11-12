@@ -33,7 +33,7 @@ impl ResolvesServerCert for CertHandler {
         let host_cert = pmap.get(&host.to_string())?;
 
         info!("Found {host} cert");
-        Some(Arc::new(host_cert.cert.clone()))
+        Some(host_cert.cert.clone())
     }
 
 }
