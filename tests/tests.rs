@@ -65,8 +65,8 @@ fn get_proc_port(child: &Child) -> Result<Option<u16>> {
 fn wait_port(child: &Child) -> Result<u16> {
     const WAIT_MS: u64 = 10;
     const WAIT_SECS: u64 = 20;
-    const WAIT_TIMES: u64 = WAIT_SECS / WAIT_MS;
-    for _ in 0.. {
+    const WAIT_TIMES: u64 = WAIT_SECS * 1000 / WAIT_MS;
+    for _ in 0..WAIT_TIMES {
         thread::sleep(Duration::from_millis(WAIT_MS));
         if let Some(port) = get_proc_port(child)? {
             return Ok(port)
@@ -91,6 +91,7 @@ impl TestContext for IntegrationTest {
     }
 
     fn teardown(self) {
+        stop_child(&self.proxy).unwrap();
     }
 }
 
@@ -98,7 +99,5 @@ impl TestContext for IntegrationTest {
 #[test]
 fn test_fetch_port(ctx: &IntegrationTest) -> Result<()> {
     println!("Port is {}", ctx.proxy_port);
-
-    stop_child(&ctx.proxy)?;
     Ok(())
 }
