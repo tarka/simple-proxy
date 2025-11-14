@@ -92,7 +92,7 @@ pub async fn start_server() -> Result<()>{
     let server_config = Arc::new(server_config);
     let tls_acceptor = TlsAcceptor::from(server_config.clone());
 
-    let addr = SocketAddr::from_str("0.0.0.0:8443")?;
+    let addr = SocketAddr::from_str("0.0.0.0:0")?;
     let listener = TcpListener::bind(addr).await?;
 
     let service = service_fn(handler);
