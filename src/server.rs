@@ -25,45 +25,15 @@ use rustls::{
     ClientConfig, ConfigBuilder,
     RootCertStore, ServerConfig, ServerConnection, Stream
 };
+use smol::net::{TcpListener, TcpStream};
+use futures_rustls::TlsConnector;
+use smol_hyper::rt::FuturesIo as HyperIo;
+use futures_io::AsyncRead;
+use futures_io::AsyncWrite;
 use tracing_log::log::{error, info, warn};
 
 use crate::{certificates::{handler::CertHandler, store::CertStore, TlsFiles}, errors::Error};
 
-cfg_if! {
-    if #[cfg(feature = "smol")] {
-        use smol::net::{TcpListener, TcpStream};
-        use futures_rustls::TlsConnector;
-        use smol_hyper::rt::FuturesIo as HyperIo;
-        use futures_io::AsyncRead;
-        use futures_io::AsyncWrite;
-
-    } else if #[cfg(feature = "tokio")] {
-        use tokio::net::TcpStream;
-        use tokio_rustls::TlsConnector;
-        use hyper_util::rt::tokio::TokioIo as HyperIo;
-
-    } else {
-        compile_error!("Either smol or tokio feature must be enabled");
-    }
-}
-
-fn spawn<T: Send + 'static>(future: impl Future<Output = T> + Send + 'static) {
-    cfg_if! {
-        if #[cfg(feature = "smol")] {
-            smol::spawn(future)
-                .detach();
-
-        } else if #[cfg(feature = "tokio")] {
-            tokio::spawn(future);
-        }
-    }
-
-    // NOTE: This also works, and could be a fallback for other runtimes?
-    //
-    // let _join = thread::spawn(|| {
-    //     pollster::block_on(future);
-    // });
-}
 
 
 static ROOT_STORE: OnceCell<RootCertStore> = OnceCell::new();
@@ -90,8 +60,13 @@ where
 }
 
 
-async fn handler(_: Request<hyper::body::Incoming>) -> Result<Response<Full<Bytes>>> {
-    Ok(Response::new(Full::new(Bytes::from("Hello, World!"))))
+async fn handler(request: Request<hyper::body::Incoming>) -> Result<Response<Full<Bytes>>> {
+    let host = request.headers().get(HOST)
+        .ok_or(Error::HttpError("No host header in request"))?;
+    let path = request.uri().path();
+
+    let msg = format!("Request: {host:?} -> {path}").into_bytes();
+    Ok(Response::new(Full::new(msg.into())))
 }
 
 

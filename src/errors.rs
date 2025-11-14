@@ -16,7 +16,7 @@ pub enum Error {
     CertificateError(&'static str),
 
     #[error("HTTP error: {0}")]
-    HttpError(String),
+    HttpError(&'static str),
 
     #[error("URL error: {0}")]
     UrlError(String),
